@@ -41,23 +41,50 @@ class LeftTurnAgent(game.Agent):
 
 class GreedyAgent(Agent):
     def __init__(self, evalFn="scoreEvaluation"):
-        self.evaluationFunction = util.lookup(evalFn, globals())
-        assert self.evaluationFunction != None
+        pass
 
     def getAction(self, state):
-        # Generate candidate actions
         legal = state.getLegalPacmanActions()
         if Directions.STOP in legal:
             legal.remove(Directions.STOP)
 
-        successors = [(state.generateSuccessor(0, action), action)
-                      for action in legal]
-        scored = [(self.evaluationFunction(state), action)
-                  for state, action in successors]
-        bestScore = max(scored)[0]
-        bestActions = [pair[1] for pair in scored if pair[0] == bestScore]
-        return random.choice(bestActions)
+        successors = []
+        for action in legal:
+            successor = state.generateSuccessor(0, action)
+            
+            # --- AQUÍ METEMOS TUS HEURÍSTICAS DE LA TAREA 1 ---
+            score = successor.getScore()
+            pacman_pos = successor.getPacmanPosition()
+            food = successor.getFood().asList()
+            ghost_states = successor.getGhostStates()
+            
+            if food:
+                min_food_distance = min(util.manhattanDistance(pacman_pos, f) for f in food)
+                score += 1.0 / (min_food_distance + 1)
+            
+            for g in ghost_states:
+                g_pos = g.getPosition()
+                g_dist = util.manhattanDistance(pacman_pos, g_pos)
+                if g.scaredTimer > 0:
+                    score += 50 / (g_dist + 1)
+                else:
+                    if g_dist <= 2: score -= 200
+
+            # Heurística A: Cápsulas de poder
+            capsulas = successor.getCapsules()
+            if capsulas:
+                min_cap_dist = min(util.manhattanDistance(pacman_pos, c) for c in capsulas)
+                score += 10.0 / (min_cap_dist + 1)
+                
+            # Heurística B: Evitar callejones (más acciones legales)
+            score += len(successor.getLegalActions(0)) * 3.0
+            
+            successors.append((action, score))
+            
+        successors.sort(key=lambda x: x[1], reverse=True)
+        return successors[0][0]
 
 
 def scoreEvaluation(state):
     return state.getScore()
+

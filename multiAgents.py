@@ -151,7 +151,70 @@ class AlphaBetaAgent(MultiAgentSearchAgent):
         Returns the minimax action using self.depth and self.evaluationFunction
         """
         "*** YOUR CODE HERE ***"
-        util.raiseNotDefined()
+        def alphabeta(state, depth, agentIndex, alpha, beta):
+            if depth == 0 or state.isWin() or state.isLose():
+                try:
+                    from pacmanAgents import NeuralAgent
+                    if not hasattr(self, 'neural_brain'):
+                        self.neural_brain = NeuralAgent()
+                    return self.neural_brain.evaluationFunction(state)
+                except:
+                    return self.evaluationFunction(state)
+
+            numAgents = state.getNumAgents()
+            nextAgent = (agentIndex + 1) % numAgents
+            nextDepth = depth - 1 if nextAgent == 0 else depth
+            actions = state.getLegalActions(agentIndex)
+            
+            if not actions:
+                try:
+                    from pacmanAgents import NeuralAgent
+                    if not hasattr(self, 'neural_brain'):
+                        self.neural_brain = NeuralAgent()
+                    return self.neural_brain.evaluationFunction(state)
+                except:
+                    return self.evaluationFunction(state)
+
+            if agentIndex == 0:
+                v = float("-inf")
+                for action in actions:
+                    successor = state.generateSuccessor(agentIndex, action)
+                    v = max(v, alphabeta(successor, nextDepth, nextAgent, alpha, beta))
+                    if v > beta:
+                        return v
+                    alpha = max(alpha, v)
+                return v
+            else:
+                v = float("inf")
+                for action in actions:
+                    successor = state.generateSuccessor(agentIndex, action)
+                    v = min(v, alphabeta(successor, nextDepth, nextAgent, alpha, beta))
+                    if v < alpha:
+                        return v
+                    beta = min(beta, v)
+                return v
+
+        legalActions = gameState.getLegalActions(0)
+        if not legalActions or gameState.isWin() or gameState.isLose():
+            return Directions.STOP
+            
+        if Directions.STOP in legalActions and len(legalActions) > 1:
+            legalActions.remove(Directions.STOP)
+
+        bestAction = legalActions[0]
+        alpha = float("-inf")
+        beta = float("inf")
+        bestValue = float("-inf")
+
+        for action in legalActions:
+            successor = gameState.generateSuccessor(0, action)
+            value = alphabeta(successor, self.depth, 1, alpha, beta)
+            if value > bestValue:
+                bestValue = value
+                bestAction = action
+            alpha = max(alpha, bestValue)
+
+        return bestAction
 
 class ExpectimaxAgent(MultiAgentSearchAgent):
     """
@@ -288,7 +351,33 @@ class NeuralAgent(Agent):
         Una función de evaluación basada en la red neuronal y en heurísticas adicionales.
         """
         if self.model is None:
-            return 0  # Si no hay modelo, devolver 0
+            # si todavía no hemos entrenado el modelo usamos la 
+            # heurística para poder jugar y sacar los datos
+            score = state.getScore()
+            pacman_pos = state.getPacmanPosition()
+            food = state.getFood().asList()
+            ghost_states = state.getGhostStates()
+            
+            if food:
+                min_food_distance = min(manhattanDistance(pacman_pos, food_pos) for food_pos in food)
+                score += 1.0 / (min_food_distance + 1)
+            
+            for ghost_state in ghost_states:
+                ghost_pos = ghost_state.getPosition()
+                ghost_distance = manhattanDistance(pacman_pos, ghost_pos)
+                if ghost_state.scaredTimer > 0:
+                    score += 50 / (ghost_distance + 1)
+                else:
+                    if ghost_distance <= 2:
+                        score -= 200
+            capsulas = state.getCapsules()
+            if capsulas:
+                min_capsule_distance = min(manhattanDistance(pacman_pos, cap_pos) for cap_pos in capsulas)
+                score += 10.0 / (min_capsule_distance + 1)
+            acciones_legales = state.getLegalActions(0)
+            score += len(acciones_legales) * 3.0
+            
+            return score
         
         # Convertir a matriz
         state_matrix = self.state_to_matrix(state)
@@ -329,7 +418,13 @@ class NeuralAgent(Agent):
                 # Si no está asustado, evitarlo
                 if ghost_distance <= 2:
                     score -= 200  # Gran penalización por estar demasiado cerca
-        
+        capsulas = state.getCapsules()
+        if capsulas:
+            min_capsule_distance = min(manhattanDistance(pacman_pos, cap_pos) for cap_pos in capsulas)
+            score += 10.0 / (min_capsule_distance + 1)
+            
+        acciones_legales = state.getLegalActions(0)
+        score += len(acciones_legales) * 3.0
         # Combinar la puntuación de la red con la heurística
         neural_score = 0
         for i, action in enumerate(self.idx_to_action.values()):
@@ -413,3 +508,4 @@ def createNeuralAgent(model_path="models/pacman_model.pth"):
     Útil para integrarse con la estructura de pacman.py.
     """
     return NeuralAgent(model_path)
+# Registramos la clase para que el importador de pacman.py la encuentre
