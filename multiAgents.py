@@ -146,20 +146,71 @@ class AlphaBetaAgent(MultiAgentSearchAgent):
     Your minimax agent with alpha-beta pruning (question 3)
     """
 
+    def __init__(self, w_heuristic=1.0, w_neural=1.0, depth="2", **kwargs):
+        super().__init__(**kwargs)
+        self.depth = int(depth)
+        self.w_heuristic = float(w_heuristic)
+        self.w_neural = float(w_neural)
+        self.neural_brain = None
+        
+        try:
+            from pacmanAgents import NeuralAgent
+            self.neural_brain = NeuralAgent()
+        except Exception as e:
+            print(f"Aviso al cargar cerebro neuronal en AlphaBetaNeuralAgent: {e}")
+
+    def evaluation_combined(self, state):
+        # 1) Puntuación tradicional con tus heurísticas de la Tarea 1
+        trad_score = state.getScore()
+        pacman_pos = state.getPacmanPosition()
+        food = state.getFood().asList()
+        ghost_states = state.getGhostStates()
+        
+        if food:
+            min_food_distance = min(manhattanDistance(pacman_pos, f) for f in food)
+            trad_score += 1.0 / (min_food_distance + 1)
+        
+        for g in ghost_states:
+            g_pos = g.getPosition()
+            g_dist = manhattanDistance(pacman_pos, g_pos)
+            if g.scaredTimer > 0:
+                trad_score += 50 / (g_dist + 1)
+            else:
+                if g_dist <= 2: 
+                    trad_score -= 200
+
+        capsulas = state.getCapsules()
+        if capsulas:
+            min_cap_dist = min(manhattanDistance(pacman_pos, c) for c in capsulas)
+            trad_score += 10.0 / (min_cap_dist + 1)
+            
+        trad_score += len(state.getLegalActions(0)) * 3.0
+
+        
+        neural_score = 0
+        if self.neural_brain and self.neural_brain.model is not None:
+            state_matrix = self.neural_brain.state_to_matrix(state)
+            state_tensor = torch.FloatTensor(state_matrix).unsqueeze(0).to(self.neural_brain.device)
+            with torch.no_grad():
+                output = self.neural_brain.model(state_tensor)
+                probabilities = torch.nn.functional.softmax(output, dim=1).cpu().numpy()[0]
+            
+            legal_actions = state.getLegalActions()
+            for i, action in enumerate(self.neural_brain.idx_to_action.values()):
+                if action in legal_actions:
+                    neural_score += probabilities[i] * 100
+
+        any_scared = any(g.scaredTimer > 0 for g in ghost_states)
+        current_w_heuristic = self.w_heuristic * 2.0 if any_scared else self.w_heuristic
+        current_w_neural = self.w_neural * 0.5 if any_scared else self.w_neural
+
+        
+        return current_w_heuristic * trad_score + current_w_neural * neural_score
+
     def getAction(self, gameState: GameState):
-        """
-        Returns the minimax action using self.depth and self.evaluationFunction
-        """
-        "*** YOUR CODE HERE ***"
         def alphabeta(state, depth, agentIndex, alpha, beta):
             if depth == 0 or state.isWin() or state.isLose():
-                try:
-                    from pacmanAgents import NeuralAgent
-                    if not hasattr(self, 'neural_brain'):
-                        self.neural_brain = NeuralAgent()
-                    return self.neural_brain.evaluationFunction(state)
-                except:
-                    return self.evaluationFunction(state)
+                return self.evaluation_combined(state)
 
             numAgents = state.getNumAgents()
             nextAgent = (agentIndex + 1) % numAgents
@@ -167,21 +218,14 @@ class AlphaBetaAgent(MultiAgentSearchAgent):
             actions = state.getLegalActions(agentIndex)
             
             if not actions:
-                try:
-                    from pacmanAgents import NeuralAgent
-                    if not hasattr(self, 'neural_brain'):
-                        self.neural_brain = NeuralAgent()
-                    return self.neural_brain.evaluationFunction(state)
-                except:
-                    return self.evaluationFunction(state)
+                return self.evaluation_combined(state)
 
             if agentIndex == 0:
                 v = float("-inf")
                 for action in actions:
                     successor = state.generateSuccessor(agentIndex, action)
                     v = max(v, alphabeta(successor, nextDepth, nextAgent, alpha, beta))
-                    if v > beta:
-                        return v
+                    if v > beta: return v
                     alpha = max(alpha, v)
                 return v
             else:
@@ -189,15 +233,13 @@ class AlphaBetaAgent(MultiAgentSearchAgent):
                 for action in actions:
                     successor = state.generateSuccessor(agentIndex, action)
                     v = min(v, alphabeta(successor, nextDepth, nextAgent, alpha, beta))
-                    if v < alpha:
-                        return v
+                    if v < alpha: return v
                     beta = min(beta, v)
                 return v
 
         legalActions = gameState.getLegalActions(0)
         if not legalActions or gameState.isWin() or gameState.isLose():
             return Directions.STOP
-            
         if Directions.STOP in legalActions and len(legalActions) > 1:
             legalActions.remove(Directions.STOP)
 

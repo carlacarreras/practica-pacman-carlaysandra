@@ -12,6 +12,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
+from torch.optim.lr_scheduler import StepLR
 # Fijamos todas las semillas para reproducibilidad
 torch.manual_seed(42)
 random.seed(42)
@@ -131,7 +132,8 @@ def preprocess_maps(maps):
 def train_model(model, train_loader, test_loader, device, num_epochs=NUM_EPOCHS):
     """Entrena el modelo con el dataset proporcionado"""
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    optimizer = optim.Adam(model.parameters(), lr=0.005, weight_decay=1e-4)
+    scheduler = StepLR(optimizer, step_size=30, gamma=0.5)
     
     best_accuracy = 0.0
     best_model_state = None
@@ -139,7 +141,6 @@ def train_model(model, train_loader, test_loader, device, num_epochs=NUM_EPOCHS)
     print(f"Comenzando entrenamiento por {num_epochs} épocas...")
     
     for epoch in range(num_epochs):
-        # Entrenamiento
         model.train()
         train_loss = 0.0
         train_correct = 0
@@ -148,16 +149,13 @@ def train_model(model, train_loader, test_loader, device, num_epochs=NUM_EPOCHS)
         for batch_idx, (maps, actions) in enumerate(train_loader):
             maps, actions = maps.to(device), actions.to(device)
             
-            # Forward pass
             outputs = model(maps)
             loss = criterion(outputs, actions)
             
-            # Backward pass y optimización
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             
-            # Estadísticas
             train_loss += loss.item()
             _, predicted = outputs.max(1)
             train_total += actions.size(0)
@@ -166,7 +164,8 @@ def train_model(model, train_loader, test_loader, device, num_epochs=NUM_EPOCHS)
             if (batch_idx + 1) % 10 == 0:
                 print(f'Epoch: {epoch+1}/{num_epochs}, Batch: {batch_idx+1}/{len(train_loader)}, Loss: {train_loss/(batch_idx+1):.4f}, Acc: {100.*train_correct/train_total:.2f}%')
         
-        # Evaluación
+        scheduler.step()
+        
         model.eval()
         test_loss = 0.0
         test_correct = 0
@@ -186,18 +185,18 @@ def train_model(model, train_loader, test_loader, device, num_epochs=NUM_EPOCHS)
         test_accuracy = 100. * test_correct / test_total
         print(f'Epoch: {epoch+1}/{num_epochs}, Train Loss: {train_loss/len(train_loader):.4f}, Test Loss: {test_loss/len(test_loader):.4f}, Test Acc: {test_accuracy:.2f}%')
         
-        # Guardar el mejor modelo
         if test_accuracy > best_accuracy:
             best_accuracy = test_accuracy
             best_model_state = model.state_dict().copy()
             print(f'¡Nuevo mejor modelo con {best_accuracy:.2f}% de precisión!')
     
-    # Cargar el mejor modelo
     if best_model_state:
         model.load_state_dict(best_model_state)
         print(f'Modelo final: precisión en test {best_accuracy:.2f}%')
     
     return model
+        
+        
 
 def save_model(model, input_size, model_path="models/pacman_model.pth"):
     """Guarda el modelo entrenado"""
