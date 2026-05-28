@@ -18,7 +18,7 @@ import os
 from util import manhattanDistance
 from game import Directions
 import random, util
-random.seed(42)  # For reproducibility
+random.seed(15)
 from game import Agent
 from pacman import GameState
 
