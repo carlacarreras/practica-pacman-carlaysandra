@@ -18,9 +18,12 @@ import os
 from util import manhattanDistance
 from game import Directions
 import random, util
+import torch
 random.seed(15)
 from game import Agent
 from pacman import GameState
+
+torch.manual_seed(15)
 
 class ReflexAgent(Agent):
     """
@@ -206,6 +209,8 @@ class AlphaBetaNeuralAgent(MultiAgentSearchAgent):
         return state.getScore() + (current_w_heuristic * trad_score) + (current_w_neural * neural_score)
 
     def getAction(self, gameState: GameState):
+        random.seed(15)
+        torch.manual_seed(15)
         def alphabeta(state, depth, agentIndex, alpha, beta):
             if depth == 0 or state.isWin() or state.isLose():
                 return self.evaluation_combined(state)
