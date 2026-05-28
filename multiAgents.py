@@ -114,80 +114,77 @@ class MinimaxAgent(MultiAgentSearchAgent):
     """
     Your minimax agent (question 2)
     """
+    def getAction(self, gameState):
+        def minimax(agentIndex, depth, state):
+            # Caso base: victoria, derrota o alcanzar profundidad máxima
+            if state.isWin() or state.isLose() or depth == self.depth:
+                return self.evaluationFunction(state)
+            
+            if agentIndex == 0: # Turno de Pacman (MAX)
+                return max(minimax(1, depth, state.generateSuccessor(0, a)) for a in state.getLegalActions(0))
+            else: # Turno de los fantasmas (MIN)
+                nextAgent = agentIndex + 1
+                nextDepth = depth
+                if nextAgent == state.getNumAgents():
+                    nextAgent = 0
+                    nextDepth = depth + 1 # Incrementa profundidad al volver a Pacman
+                return min(minimax(nextAgent, nextDepth, state.generateSuccessor(agentIndex, a)) for a in state.getLegalActions(agentIndex))
+        
+        # Toma la mejor acción basada en la raíz del árbol
+        return max(gameState.getLegalActions(0), key=lambda a: minimax(1, 0, gameState.generateSuccessor(0, a)))
 
-    def getAction(self, gameState: GameState):
-        """
-        Returns the minimax action from the current gameState using self.depth
-        and self.evaluationFunction.
-
-        Here are some method calls that might be useful when implementing minimax.
-
-        gameState.getLegalActions(agentIndex):
-        Returns a list of legal actions for an agent
-        agentIndex=0 means Pacman, ghosts are >= 1
-
-        gameState.generateSuccessor(agentIndex, action):
-        Returns the successor game state after an agent takes an action
-
-        gameState.getNumAgents():
-        Returns the total number of agents in the game
-
-        gameState.isWin():
-        Returns whether or not the game state is a winning state
-
-        gameState.isLose():
-        Returns whether or not the game state is a losing state
-        """
-        "*** YOUR CODE HERE ***"
-        util.raiseNotDefined()
-
-class AlphaBetaAgent(MultiAgentSearchAgent):
+class AlphaBetaNeuralAgent(MultiAgentSearchAgent):
     """
     Your minimax agent with alpha-beta pruning (question 3)
     """
 
-    def __init__(self, w_heuristic=1.0, w_neural=1.0, depth="2", **kwargs):
+    def __init__(self, w_heuristic=2.0, w_neural=1.0, depth="2", **kwargs):
         super().__init__(**kwargs)
         self.depth = int(depth)
         self.w_heuristic = float(w_heuristic)
         self.w_neural = float(w_neural)
         self.neural_brain = None
         
+        # CORRECCIÓN DE IMPORTACIÓN: Cargamos la clase localmente desde este mismo archivo
         try:
-            from pacmanAgents import NeuralAgent
             self.neural_brain = NeuralAgent()
+            print("¡ÉXITO! Cerebro neuronal conectado correctamente a AlphaBetaNeuralAgent.")
         except Exception as e:
             print(f"Aviso al cargar cerebro neuronal en AlphaBetaNeuralAgent: {e}")
 
     def evaluation_combined(self, state):
-        # 1) Puntuación tradicional con tus heurísticas de la Tarea 1
-        trad_score = state.getScore()
+        # 1) Puntuación tradicional + Heurísticas personalizadas de la Tarea 1
+        trad_score = 0.0
         pacman_pos = state.getPacmanPosition()
         food = state.getFood().asList()
         ghost_states = state.getGhostStates()
         
+        # Heurística base de comida
         if food:
             min_food_distance = min(manhattanDistance(pacman_pos, f) for f in food)
             trad_score += 1.0 / (min_food_distance + 1)
         
+        # Heurística base de proximidad a fantasmas
         for g in ghost_states:
             g_pos = g.getPosition()
             g_dist = manhattanDistance(pacman_pos, g_pos)
             if g.scaredTimer > 0:
-                trad_score += 50 / (g_dist + 1)
+                trad_score += 50.0 / (g_dist + 1) # Persecución activa
             else:
                 if g_dist <= 2: 
-                    trad_score -= 200
+                    trad_score -= 200.0 # Penalización crítica por peligro
 
+        # NUEVA HEURÍSTICA 1: Distancia a las píldoras de poder (Cápsulas)
         capsulas = state.getCapsules()
         if capsulas:
             min_cap_dist = min(manhattanDistance(pacman_pos, c) for c in capsulas)
             trad_score += 10.0 / (min_cap_dist + 1)
             
+        # NUEVA HEURÍSTICA 2: Seguridad contra callejones (Acciones legales disponibles)
         trad_score += len(state.getLegalActions(0)) * 3.0
 
-        
-        neural_score = 0
+        # 2) Evaluación de la Red Neuronal
+        neural_score = 0.0
         if self.neural_brain and self.neural_brain.model is not None:
             state_matrix = self.neural_brain.state_to_matrix(state)
             state_tensor = torch.FloatTensor(state_matrix).unsqueeze(0).to(self.neural_brain.device)
@@ -195,17 +192,18 @@ class AlphaBetaAgent(MultiAgentSearchAgent):
                 output = self.neural_brain.model(state_tensor)
                 probabilities = torch.nn.functional.softmax(output, dim=1).cpu().numpy()[0]
             
-            legal_actions = state.getLegalActions()
+            legal_actions = state.getLegalActions(0)
             for i, action in enumerate(self.neural_brain.idx_to_action.values()):
                 if action in legal_actions:
-                    neural_score += probabilities[i] * 100
+                    neural_score += probabilities[i] * 100.0
 
+        # 3) Estrategia de pesos dinámicos (Opcional Tarea 3)
         any_scared = any(g.scaredTimer > 0 for g in ghost_states)
         current_w_heuristic = self.w_heuristic * 2.0 if any_scared else self.w_heuristic
         current_w_neural = self.w_neural * 0.5 if any_scared else self.w_neural
 
-        
-        return current_w_heuristic * trad_score + current_w_neural * neural_score
+        # CORRECCIÓN DE FÓRMULA: Sumamos la puntuación real del juego para dar realismo físico
+        return state.getScore() + (current_w_heuristic * trad_score) + (current_w_neural * neural_score)
 
     def getAction(self, gameState: GameState):
         def alphabeta(state, depth, agentIndex, alpha, beta):
@@ -220,7 +218,7 @@ class AlphaBetaAgent(MultiAgentSearchAgent):
             if not actions:
                 return self.evaluation_combined(state)
 
-            if agentIndex == 0:
+            if agentIndex == 0: # Nodo MAX (Pacman)
                 v = float("-inf")
                 for action in actions:
                     successor = state.generateSuccessor(agentIndex, action)
@@ -228,7 +226,7 @@ class AlphaBetaAgent(MultiAgentSearchAgent):
                     if v > beta: return v
                     alpha = max(alpha, v)
                 return v
-            else:
+            else: # Nodo MIN (Fantasmas)
                 v = float("inf")
                 for action in actions:
                     successor = state.generateSuccessor(agentIndex, action)
@@ -237,6 +235,7 @@ class AlphaBetaAgent(MultiAgentSearchAgent):
                     beta = min(beta, v)
                 return v
 
+        # Selección de movimiento en la raíz
         legalActions = gameState.getLegalActions(0)
         if not legalActions or gameState.isWin() or gameState.isLose():
             return Directions.STOP
